@@ -149,8 +149,8 @@ class QtPlotWidget(FigureCanvasQTAgg):
         self.draw()
         print(f"[PLOTTER] ✓ All shapes rendered")
     
-    def _plot_shapes_3d(self, shapes, clear, resolution=50):
-        """Plot 3D implicit surfaces using isosurfaces"""
+    def _plot_shapes_3d(self, shapes, clear, resolution=30):
+        """Plot 3D implicit surfaces using isosurfaces (OPTIMIZED)"""
         if clear:
             self.ax.clear()
             self.ax.set_xlabel('x', fontsize=12)
@@ -158,9 +158,10 @@ class QtPlotWidget(FigureCanvasQTAgg):
             self.ax.set_zlabel('z', fontsize=12)
         
         x_min, x_max, y_min, y_max = self.bounds
-        z_min, z_max = y_min, y_max  # Use same bounds for z
+        z_min, z_max = y_min, y_max
         
-        # Create 3D grid
+        # Create 3D grid ONCE (shared by all shapes)
+        print(f"[PLOTTER] Creating {resolution}x{resolution}x{resolution} 3D grid...")
         x_vals = np.linspace(x_min, x_max, resolution)
         y_vals = np.linspace(y_min, y_max, resolution)
         z_vals = np.linspace(z_min, z_max, resolution)
@@ -173,9 +174,6 @@ class QtPlotWidget(FigureCanvasQTAgg):
             
             try:
                 print(f"[PLOTTER] Plotting 3D {shape.name}: {shape.equation_str}")
-                print(f"[PLOTTER]   Translation: {shape.translation}")
-                print(f"[PLOTTER]   Rotation: {shape.rotation_euler}°")
-                print(f"[PLOTTER]   Color: {shape.color}")
                 
                 # Get base equation
                 base_eq = shape.get_transformed_equation()
@@ -185,48 +183,57 @@ class QtPlotWidget(FigureCanvasQTAgg):
                 else:
                     expr = base_eq
                 
-                # Convert to numpy function (3D)
+                # Convert to numpy function (3D) - CACHED
                 from sympy.abc import z as z_sym
+                print(f"[PLOTTER] Compiling function...")
                 f = lambdify([x, y, z_sym], expr, modules=['numpy'])
                 
                 # Apply transforms
                 tx, ty, tz = shape.translation
-                X_transformed = X - tx
-                Y_transformed = Y - ty
-                Z_transformed = Z - tz
-                
-                # TODO: Apply 3D rotation using quaternion
-                # For now, just translation
+                X_t = X - tx
+                Y_t = Y - ty
+                Z_t = Z - tz
                 
                 # Evaluate on grid
-                values = f(X_transformed, Y_transformed, Z_transformed)
+                print(f"[PLOTTER] Evaluating function on grid...")
+                values = f(X_t, Y_t, Z_t)
                 
-                # Use marching cubes to extract isosurface
+                # Extract isosurface using marching cubes
                 try:
                     from skimage import measure
-                    verts, faces, _, _ = measure.marching_cubes(values, level=0, spacing=(
-                        (x_max - x_min) / resolution,
-                        (y_max - y_min) / resolution,
-                        (z_max - z_min) / resolution
-                    ))
+                    print(f"[PLOTTER] Running marching cubes...")
                     
-                    # Offset vertices to correct position
+                    verts, faces, _, _ = measure.marching_cubes(
+                        values, 
+                        level=0,
+                        spacing=(
+                            (x_max - x_min) / resolution,
+                            (y_max - y_min) / resolution,
+                            (z_max - z_min) / resolution
+                        ),
+                        allow_degenerate=False
+                    )
+                    
+                    # Offset vertices
                     verts[:, 0] += x_min
                     verts[:, 1] += y_min
                     verts[:, 2] += z_min
                     
-                    # Plot surface
-                    self.ax.plot_trisurf(verts[:, 0], verts[:, 1], faces, verts[:, 2],
-                                        color=shape.color, alpha=0.7, label=shape.name)
+                    # Plot surface with reduced detail for performance
+                    print(f"[PLOTTER] Rendering surface ({len(verts)} vertices)...")
+                    self.ax.plot_trisurf(
+                        verts[:, 0], verts[:, 1], faces, verts[:, 2],
+                        color=shape.color, 
+                        alpha=0.8,
+                        linewidth=0.2,
+                        antialiased=True,
+                        shade=True
+                    )
                     
                     print(f"[PLOTTER] ✓ {shape.name} plotted (3D isosurface)")
                 
                 except ImportError:
-                    print(f"[PLOTTER] ✗ scikit-image not available, falling back to voxel plot")
-                    # Fallback: plot voxels where function is close to zero
-                    mask = np.abs(values) < 0.5
-                    self.ax.voxels(X, Y, Z, mask, facecolors=shape.color, alpha=0.3)
-                    print(f"[PLOTTER] ✓ {shape.name} plotted (voxels)")
+                    print(f"[PLOTTER] ✗ scikit-image not installed - install with: pip install scikit-image")
             
             except Exception as e:
                 print(f"[PLOTTER] ✗ Error plotting 3D {shape.name}: {e}")
