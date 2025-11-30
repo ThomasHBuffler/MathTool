@@ -16,70 +16,90 @@ class Shape:
         equation_str: The equation as string (e.g., "x^2 + y^2 = 25")
         equation: Parsed SymPy equation
         name: Display name (e.g., "Circle 1")
-        translation: (x, y) offset
-        rotation: Rotation angle in degrees
+        translation: (x, y, z) offset (z unused in 2D)
+        rotation_euler: (pitch, roll, yaw) in degrees
+        rotation_quat: (w, x, y, z) quaternion (auto-calculated from euler)
+        dimension: Working dimension (2 or 3)
         visible: Whether to render this shape
         color: Display color (matplotlib color string)
     """
     equation_str: str
     equation: Eq
     name: str = "Shape"
-    translation: Tuple[float, float] = (0.0, 0.0)
-    rotation: float = 0.0  # Degrees
+    translation: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    rotation_euler: Tuple[float, float, float] = (0.0, 0.0, 0.0)  # pitch, roll, yaw (degrees)
+    rotation_quat: Tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # w, x, y, z
+    dimension: int = 2
     visible: bool = True
     color: str = "blue"
     
+    def set_rotation_euler(self, pitch: float = 0.0, roll: float = 0.0, yaw: float = 0.0):
+        """
+        Set rotation using Euler angles (degrees) and auto-calculate quaternion
+        
+        In 2D: only yaw matters (rotation around z-axis)
+        In 3D: all three angles used
+        """
+        import math
+        
+        self.rotation_euler = (pitch, roll, yaw)
+        
+        # Convert to radians
+        p = math.radians(pitch)
+        r = math.radians(roll)
+        y_rad = math.radians(yaw)
+        
+        # Convert Euler to quaternion (ZYX order)
+        # For 2D, we only care about yaw (rotation around Z)
+        if self.dimension == 2:
+            # Simple 2D rotation quaternion
+            w = math.cos(y_rad / 2)
+            x = 0.0
+            y = 0.0
+            z = math.sin(y_rad / 2)
+        else:
+            # Full 3D quaternion from Euler angles
+            cy = math.cos(y_rad * 0.5)
+            sy = math.sin(y_rad * 0.5)
+            cp = math.cos(p * 0.5)
+            sp = math.sin(p * 0.5)
+            cr = math.cos(r * 0.5)
+            sr = math.sin(r * 0.5)
+            
+            w = cr * cp * cy + sr * sp * sy
+            x = sr * cp * cy - cr * sp * sy
+            y = cr * sp * cy + sr * cp * sy
+            z = cr * cp * sy - sr * sp * cy
+        
+        self.rotation_quat = (w, x, y, z)
+    
+    def get_rotation_angle_2d(self) -> float:
+        """Get the 2D rotation angle in degrees (just the yaw component)"""
+        return self.rotation_euler[2]  # yaw
+    
     def get_transformed_equation(self):
         """
-        Get the equation with translation and rotation applied
+        Get the BASE equation without transforms
         
-        For translation (tx, ty) and rotation (θ degrees), we:
-        1. Translate: x → (x - tx), y → (y - ty)
-        2. Rotate: Apply inverse rotation matrix
+        NOTE: For implicit functions, transforms CANNOT be applied by substitution.
+        The rotation/translation must be applied during RENDERING by transforming
+        the evaluation grid points, not the equation itself.
         
-        Rotation matrix (inverse):
-        x' = x*cos(θ) + y*sin(θ)
-        y' = -x*sin(θ) + y*cos(θ)
-        
-        Example:
-            Original: x^2 + y^2 = 25
-            Translation: (3, 2), Rotation: 45°
-            Result: Rotated and translated circle
+        This method now just returns the original equation.
+        Transforms are handled in the plotter.
         """
-        from sympy import symbols, cos, sin, pi
-        from sympy.abc import x, y
-        
-        tx, ty = self.translation
-        theta_deg = self.rotation
-        
-        # Get the equation expression
         if isinstance(self.equation, Eq):
             expr = self.equation.lhs - self.equation.rhs
+            return Eq(expr, 0)
         else:
-            expr = self.equation
-        
-        # Apply translation
-        if tx != 0 or ty != 0:
-            expr = expr.subs({x: x - tx, y: y - ty})
-        
-        # Apply rotation (if not zero)
-        if theta_deg != 0:
-            # Convert degrees to radians
-            theta_rad = theta_deg * pi / 180
-            
-            # Inverse rotation: rotate coordinates by -theta
-            # x' = x*cos(-θ) - y*sin(-θ) = x*cos(θ) + y*sin(θ)
-            # y' = x*sin(-θ) + y*cos(-θ) = -x*sin(θ) + y*cos(θ)
-            x_rot = x * cos(theta_rad) + y * sin(theta_rad)
-            y_rot = -x * sin(theta_rad) + y * cos(theta_rad)
-            
-            expr = expr.subs({x: x_rot, y: y_rot})
-        
-        return Eq(expr, 0)
+            return self.equation
     
     def __repr__(self):
         vis = "✓" if self.visible else "✗"
-        return f"Shape({self.name}, {vis}, pos={self.translation}, rot={self.rotation}°)"
+        if self.dimension == 2:
+            return f"Shape({self.name}, {vis}, pos={self.translation[:2]}, rot={self.get_rotation_angle_2d()}°)"
+        else:
+            return f"Shape({self.name}, {vis}, pos={self.translation}, euler={self.rotation_euler}°)"
 
 
 class ShapeManager:

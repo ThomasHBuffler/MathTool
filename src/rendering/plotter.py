@@ -69,25 +69,47 @@ class QtPlotWidget(FigureCanvasQTAgg):
             
             try:
                 print(f"[PLOTTER] Plotting {shape.name}: {shape.equation_str}")
-                print(f"[PLOTTER]   Translation: {shape.translation}")
-                print(f"[PLOTTER]   Rotation: {shape.rotation}°")
+                print(f"[PLOTTER]   Translation: {shape.translation[:2]}")
+                print(f"[PLOTTER]   Rotation: {shape.get_rotation_angle_2d()}° (quat: {shape.rotation_quat})")
                 print(f"[PLOTTER]   Color: {shape.color}")
                 
-                # Get transformed equation
-                transformed_eq = shape.get_transformed_equation()
-                print(f"[PLOTTER]   Transformed: {transformed_eq}")
+                # Get the BASE equation (no transforms)
+                base_eq = shape.get_transformed_equation()
                 
                 # Convert to expression
-                if isinstance(transformed_eq, Eq):
-                    expr = transformed_eq.lhs - transformed_eq.rhs
+                if isinstance(base_eq, Eq):
+                    expr = base_eq.lhs - base_eq.rhs
                 else:
-                    expr = transformed_eq
+                    expr = base_eq
                 
                 # Convert to numpy function
                 f = lambdify([x, y], expr, modules=['numpy'])
                 
-                # Evaluate on grid
-                Z = f(X, Y)
+                # Apply INVERSE transforms to the grid points
+                # This evaluates the original equation at transformed positions
+                
+                # Step 1: Translation (inverse = subtract)
+                tx, ty, _ = shape.translation
+                X_transformed = X - tx
+                Y_transformed = Y - ty
+                
+                # Step 2: Rotation (inverse = rotate by -theta)
+                theta_deg = shape.get_rotation_angle_2d()
+                if theta_deg != 0:
+                    import math
+                    theta_rad = math.radians(-theta_deg)  # NEGATIVE for inverse
+                    cos_theta = np.cos(theta_rad)
+                    sin_theta = np.sin(theta_rad)
+                    
+                    # Rotate the grid points (inverse rotation)
+                    X_rotated = X_transformed * cos_theta - Y_transformed * sin_theta
+                    Y_rotated = X_transformed * sin_theta + Y_transformed * cos_theta
+                    
+                    X_transformed = X_rotated
+                    Y_transformed = Y_rotated
+                
+                # Evaluate the ORIGINAL equation at the TRANSFORMED grid points
+                Z = f(X_transformed, Y_transformed)
                 
                 # Plot contour
                 self.ax.contour(X, Y, Z, levels=[0], 

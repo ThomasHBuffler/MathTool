@@ -85,16 +85,58 @@ class ShapeWidget(QFrame):
         trans_layout.addStretch()
         layout.addLayout(trans_layout)
         
-        # Rotation control
-        rot_layout = QHBoxLayout()
-        rot_layout.addWidget(QLabel("Rotation:"))
-        self.rot_input = QLineEdit(str(self.shape.rotation))
-        self.rot_input.setMaximumWidth(60)
-        self.rot_input.textChanged.connect(self.on_transform_changed)
-        rot_layout.addWidget(self.rot_input)
-        rot_layout.addWidget(QLabel("°"))
-        rot_layout.addStretch()
-        layout.addLayout(rot_layout)
+        # Rotation controls (dimension-aware)
+        if self.shape.dimension == 2:
+            # 2D: Single angle (yaw only)
+            rot_layout = QHBoxLayout()
+            rot_layout.addWidget(QLabel("Rotation:"))
+            self.rot_input = QLineEdit(str(self.shape.get_rotation_angle_2d()))
+            self.rot_input.setMaximumWidth(60)
+            self.rot_input.textChanged.connect(self.on_transform_changed)
+            rot_layout.addWidget(self.rot_input)
+            rot_layout.addWidget(QLabel("°"))
+            rot_layout.addStretch()
+            layout.addLayout(rot_layout)
+        else:
+            # 3D: Pitch, Roll, Yaw
+            rot_layout = QVBoxLayout()
+            rot_label = QLabel("Rotation (Euler):")
+            rot_layout.addWidget(rot_label)
+            
+            # Pitch
+            pitch_layout = QHBoxLayout()
+            pitch_layout.addWidget(QLabel("Pitch:"))
+            self.pitch_input = QLineEdit(str(self.shape.rotation_euler[0]))
+            self.pitch_input.setMaximumWidth(60)
+            self.pitch_input.textChanged.connect(self.on_transform_changed)
+            pitch_layout.addWidget(self.pitch_input)
+            pitch_layout.addWidget(QLabel("°"))
+            pitch_layout.addStretch()
+            rot_layout.addLayout(pitch_layout)
+            
+            # Roll
+            roll_layout = QHBoxLayout()
+            roll_layout.addWidget(QLabel("Roll:"))
+            self.roll_input = QLineEdit(str(self.shape.rotation_euler[1]))
+            self.roll_input.setMaximumWidth(60)
+            self.roll_input.textChanged.connect(self.on_transform_changed)
+            roll_layout.addWidget(self.roll_input)
+            roll_layout.addWidget(QLabel("°"))
+            roll_layout.addStretch()
+            rot_layout.addLayout(roll_layout)
+            
+            # Yaw
+            yaw_layout = QHBoxLayout()
+            yaw_layout.addWidget(QLabel("Yaw:"))
+            self.yaw_input = QLineEdit(str(self.shape.rotation_euler[2]))
+            self.yaw_input.setMaximumWidth(60)
+            self.yaw_input.textChanged.connect(self.on_transform_changed)
+            yaw_layout.addWidget(self.yaw_input)
+            yaw_layout.addWidget(QLabel("°"))
+            yaw_layout.addStretch()
+            rot_layout.addLayout(yaw_layout)
+            
+            layout.addLayout(rot_layout)
         
         # Color indicator
         color_layout = QHBoxLayout()
@@ -115,10 +157,19 @@ class ShapeWidget(QFrame):
         try:
             tx = float(self.tx_input.text() or 0)
             ty = float(self.ty_input.text() or 0)
-            rot = float(self.rot_input.text() or 0)
             
-            self.shape.translation = (tx, ty)
-            self.shape.rotation = rot
+            self.shape.translation = (tx, ty, 0.0)
+            
+            # Handle rotation based on dimension
+            if self.shape.dimension == 2:
+                rot = float(self.rot_input.text() or 0)
+                self.shape.set_rotation_euler(yaw=rot)
+            else:
+                pitch = float(self.pitch_input.text() or 0)
+                roll = float(self.roll_input.text() or 0)
+                yaw = float(self.yaw_input.text() or 0)
+                self.shape.set_rotation_euler(pitch, roll, yaw)
+            
             self.on_update()
         except ValueError:
             pass  # Ignore invalid input
